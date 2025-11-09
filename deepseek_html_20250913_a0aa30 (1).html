@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Red Waves Shader Wallpaper</title>
+    <style>
+        body, html { 
+            margin: 0; 
+            padding: 0; 
+            overflow: hidden; 
+            width: 100%; 
+            height: 100%; 
+        }
+        canvas { 
+            display: block; 
+            width: 100vw; 
+            height: 100vh; 
+        }
+    </style>
+</head>
+<body>
+    <canvas id="canvas"></canvas>
+
+    <script>
+        // Инициализация переменных, которые обычно предоставляет Shadertoy (iResolution, iTime, iMouse)
+        const canvas = document.getElementById('canvas');
+        const gl = canvas.getContext('webgl2');
+        let startTime;
+
+        if (!gl) {
+            alert('WebGL 2 не поддерживается вашим браузером!');
+        }
+
+        function initShader() {
+            startTime = Date.now() / 1000;
+
+            // Вершинный шейдер (просто рисует полноэкранный прямоугольник)
+            const vsSource = `#version 300 es
+                in vec4 aPosition;
+                void main() {
+                    gl_Position = aPosition;
+                }
+            `;
+
+            // Ваш фрагментный шейдер (основной код)
+            const fsSource = `#version 300 es
+                precision highp float;
+                out vec4 fragColor;
+                
+                uniform vec2 iResolution;
+                uniform float iTime;
+                
+                // Ваши функции
+                vec2 hash22(vec2 p) {
+                    vec3 p3 = fract(vec3(p.xyx) * vec3(123.34, 234.34, 345.65));
+                    p3 += dot(p3, p3 + 34.45);
+                    return fract(vec2(p3.x * p3.y, p3.y * p3.z));
+                }
+
+                float smin(float a, float b, float k) {
+                    float h = clamp(0.5 + 0.5 * (b - a) / k, 0.0, 1.0);
+                    return mix(b, a, h) - k * h * (1.0 - h);
+                }
+
+                float voronoi(vec2 uv, float size) {
+                    float speed = 1.0;
+                    vec2 gv = fract(uv * size) - 0.5;
+                    vec2 id = floor(uv * size);
+                    float minDist = 1.0;
+                    for(float y = -1.0; y <= 1.0; y++) {
+                        for(float x = -1.0; x <= 1.0; x++) {
+                            vec2 offset = vec2(x, y);
+                            vec2 n = hash22(id + offset);
+                            vec2 p = offset + sin(n * (iTime * speed + 10.0)) * 0.5;
+                            float d = length(gv - p);
+                            minDist = smin(d, minDist, 0.5);
+                        }
+                    }
+                    return minDist;
+                }
+
+                float waves(vec2 uv) {
+                    float offset = (sin(uv.x * 10.0) * sin(uv.y * 10.0)) * 0.05;
+                    float noise = voronoi(uv + offset, 7.0);
+                    noise = smoothstep(0.5, 0.3, noise);
+                    return step(abs(noise - 0.5), 0.2);
+                }
+
+                void main() {
+                    vec2 fragCoord = gl_FragCoord.xy;
+                    vec2 uv = fragCoord / iResolution - 0.5;
+                    uv.x *= iResolution.x / iResolution.y;
+                    uv.x += iTime * 0.1;
+                    
+                    float foam = waves(uv);
+                    float shadow = 1.0 - waves(uv + vec2(0.05)) * 0.4;
+                    
+                    // Черный фон
+                    vec3 col = vec3(0.0);
+                    
+                    // Основные красные волны с тенями
+                    if (foam > 0.0) {
+                        // Применяем тень к красному цвету
+                        vec3 redColor = vec3(0.7, 0.0, 0.0);
+                        redColor *= shadow; // Умножаем на коэффициент тени
+                        
+                        // Смешиваем черный фон с красными волнами (с учетом теней)
+                        col = mix(col, redColor, foam);
+                    }
+                    
+                    // Яркая красная пена (без теней)
+                    vec3 brightFoam = vec3(1.0, 0.2, 0.2);
+                    col = mix(col, brightFoam, foam * 0.5);
+                    
+                    fragColor = vec4(col, 1.0);
+                }
+            `;
+
+            // Компиляция шейдера
+            const vertexShader = gl.createShader(gl.VERTEX_SHADER);
+            gl.shaderSource(vertexShader, vsSource);
+            gl.compileShader(vertexShader);
+            if (!gl.getShaderParameter(vertexShader, gl.COMPILE_STATUS)) {
+                console.error('Ошибка компиляции вершинного шейдера:', gl.getShaderInfoLog(vertexShader));
+                return;
+            }
+
+            const fragmentShader = gl.createShader(gl.FRAGMENT_SHADER);
+            gl.shaderSource(fragmentShader, fsSource);
+            gl.compileShader(fragmentShader);
+            if (!gl.getShaderParameter(fragmentShader, gl.COMPILE_STATUS)) {
+                console.error('Ошибка компиляции фрагментного шейдера:', gl.getShaderInfoLog(fragmentShader));
+                return;
+            }
+
+            const shaderProgram = gl.createProgram();
+            gl.attachShader(shaderProgram, vertexShader);
+            gl.attachShader(shaderProgram, fragmentShader);
+            gl.linkProgram(shaderProgram);
+            if (!gl.getProgramParameter(shaderProgram, gl.LINK_STATUS)) {
+                console.error('Ошибка линковки шейдерной программы:', gl.getProgramInfoLog(shaderProgram));
+                return;
+            }
+            gl.useProgram(shaderProgram);
+
+            // Создание буфера для полноэкранного прямоугольника
+            const positionBuffer = gl.createBuffer();
+            gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+            const positions = [
+                -1.0, -1.0,
+                 1.0, -1.0,
+                -1.0,  1.0,
+                 1.0,  1.0,
+            ];
+            gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(positions), gl.STATIC_DRAW);
+
+            const aPosition = gl.getAttribLocation(shaderProgram, 'aPosition');
+            gl.enableVertexAttribArray(aPosition);
+            gl.vertexAttribPointer(aPosition, 2, gl.FLOAT, false, 0, 0);
+
+            // Получение uniform-локаций
+            const iResolutionLocation = gl.getUniformLocation(shaderProgram, 'iResolution');
+            const iTimeLocation = gl.getUniformLocation(shaderProgram, 'iTime');
+
+            function render() {
+                // Обновление размера canvas под размер окна
+                if (canvas.width !== canvas.clientWidth || canvas.height !== canvas.clientHeight) {
+                    canvas.width = canvas.clientWidth;
+                    canvas.height = canvas.clientHeight;
+                    gl.viewport(0, 0, canvas.width, canvas.height);
+                }
+
+                // Передача uniform-переменных в шейдер
+                gl.uniform2f(iResolutionLocation, canvas.width, canvas.height);
+                gl.uniform1f(iTimeLocation, (Date.now() / 1000) - startTime);
+
+                // Отрисовка
+                gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+
+                requestAnimationFrame(render);
+            }
+
+            render();
+        }
+
+        window.onload = initShader;
+    </script>
+</body>
+</html>
